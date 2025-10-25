@@ -3,15 +3,29 @@
 
 import Tesseract from "tesseract.js";
 
+// Load pdfjs-dist v3 from either legacy or build path (Next 16 friendly)
+async function loadPdfJs() {
+  try {
+    // Preferred in v3
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const m1: any = await import("pdfjs-dist/legacy/build/pdf.js");
+    return m1;
+  } catch {
+    // Fallback (some installs expose only build/pdf.js)
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const m2: any = await import("pdfjs-dist/build/pdf.js");
+    return m2;
+  }
+}
+
 export async function extractTextFromFile(file: File): Promise<string> {
   const mime = (file.type || "").toLowerCase();
   const buf = Buffer.from(await file.arrayBuffer());
 
-  // --- PDF via pdfjs-dist (works in Next.js 16) ---
+  // --- PDF via pdfjs-dist v3 ---
   if (mime === "application/pdf" || file.name.toLowerCase().endsWith(".pdf")) {
-    const pdfjs: any = await import("pdfjs-dist/legacy/build/pdf.js");
-    // In Node.js runtime this works without setting a worker
-    const loadingTask = pdfjs.getDocument({ data: buf });
+    const pdfjsLib = await loadPdfJs();
+    const loadingTask = pdfjsLib.getDocument({ data: buf });
     const doc = await loadingTask.promise;
 
     let text = "";
@@ -19,10 +33,10 @@ export async function extractTextFromFile(file: File): Promise<string> {
     for (let p = 1; p <= maxPages; p++) {
       const page = await doc.getPage(p);
       const content = await page.getTextContent();
-      const line = (content.items as any[])
-        .map((it: any) => (typeof it?.str === "string" ? it.str : ""))
-        .join(" ");
-      text += line + "\n";
+      for (const item of content.items as any[]) {
+        if (typeof item?.str === "string") text += item.str + " ";
+      }
+      text += "\n";
     }
     return clean(text);
   }
@@ -51,3 +65,5 @@ export function truncateForLLM(text: string, maxChars = 50_000): string {
   const tail = text.slice(-Math.floor(maxChars * 0.3));
   return `${head}\n\n[...] (omitted for length)\n\n${tail}`;
 }
+
+
