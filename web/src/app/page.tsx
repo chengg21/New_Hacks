@@ -34,7 +34,22 @@ export default function Home() {
     selected.forEach(t => fd.append("types", t));
     fd.append("difficulty", difficulty);
 
-    const res = await fetch("/api/generate", { method: "POST", body: fd });
+    // Add a 90s client-side timeout so the button never spins forever
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 90_000);
+
+    let res: Response;
+    try {
+      res = await fetch("/api/generate", { method: "POST", body: fd, signal: controller.signal });
+    } catch (e: any) {
+      clearTimeout(timer);
+      setLoading(false);
+      alert(e?.name === "AbortError"
+        ? "Request timed out. Try a smaller file or upload a .txt of your notes."
+        : (e?.message || "Network error while generating quiz."));
+      return;
+    }
+    clearTimeout(timer);
     const data = await res.json();
     setLoading(false);
 
